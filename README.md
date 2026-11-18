@@ -1,7 +1,18 @@
-# Winche admin TypeScript SDK (`@winche/admin`)
+# Winche admin TypeScript SDK (`@winche-technologies/admin`)
 
 A Winche project's data — documents, files, the app's users, assets, and calling functions — with one API wherever it
-runs:
+runs. Published as `@winche-technologies/admin`, imported as `@winche/admin` (an alias):
+
+```sh
+npm install @winche/admin@npm:@winche-technologies/admin       # Node, bundlers
+```
+
+```json
+// deno.json (functions)
+{ "imports": { "@winche/admin": "npm:@winche-technologies/admin@^3" } }
+```
+
+Where it runs:
 
 | Where | Acts as | Limited by |
 | --- | --- | --- |
