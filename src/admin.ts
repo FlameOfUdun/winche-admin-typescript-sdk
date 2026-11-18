@@ -12,7 +12,8 @@
  * - in functions: the server (full rights, access rules don't apply);
  * - in a console page: the person who opened it, limited by their role in the project (viewer reads, member writes
  *   data, admin does everything);
- * - anywhere else: `initializeAdmin({ server, project, token })`, limited by the token's role.
+ * - anywhere else: `initializeAdmin({ server, project, key })` (or a trusted `identityToken`), as a service account,
+ *   limited by its role.
  *
  * `as(user)` gives the same API acting as one of the app's users: every documents and files call is checked against
  * the project's access rules for them, as if the app had made it.
@@ -856,41 +857,79 @@ export class Admin {
   }
 }
 
-/** How `initializeAdmin` reaches a Winche server. */
+/** How `initializeAdmin` reaches a Winche server, and who it signs in as (one of `key`, `identityToken`, `token`). */
 export interface AdminOptions {
   /** The server's address, e.g. "https://winche.example.com". */
   server: string;
   /** The project's id. */
   project: string;
-  /** A token for the project (or a function that returns the current one): its role limits what the SDK may do. */
-  token: string | (() => string | Promise<string>);
+  /**
+   * A service account's key (`wsk_…`, from the console or `winche accounts:keys:add`): exchanged for an access token,
+   * renewed before it runs out. Keep it in your server's secrets.
+   */
+  key?: string;
+  /**
+   * The current token this host's or CI job's identity provider signs about it (OpenID Connect), for a service account
+   * that trusts that identity: no key to keep. Called again whenever a new access token is needed.
+   */
+  identityToken?: () => string | Promise<string>;
+  /** An access token as it is (or a function that returns the current one), when you get it some other way. */
+  token?: string | (() => string | Promise<string>);
   /** The fetch to use (default: the global one). */
   fetch?: typeof fetch;
 }
 
-/** The SDK for a project on a server, from anywhere (another server, a script): calls go over HTTPS with the token. */
+/** The SDK for a project on a server, from anywhere (another server, a script): calls go over HTTPS as a service account. */
 export function initializeAdmin(options: AdminOptions): Admin {
   const server = (options?.server ?? "").replace(/\/+$/, "");
   if (!/^https?:\/\//.test(server)) throw new WincheError("invalid-argument", "initializeAdmin: give the server's address, e.g. https://winche.example.com.");
   if (!options.project) throw new WincheError("invalid-argument", "initializeAdmin: give the project's id.");
-  if (!options.token) throw new WincheError("invalid-argument", "initializeAdmin: give a token.");
-  const url = `${server}/console/v1/projects/${encodeURIComponent(options.project)}/admin`;
+  if ([options.key, options.identityToken, options.token].filter(Boolean).length !== 1)
+    throw new WincheError("invalid-argument", "initializeAdmin: give one of key (a service account's), identityToken (a trusted identity's) or token.");
+  const base = `${server}/console/v1/projects/${encodeURIComponent(options.project)}`;
   const send = options.fetch ?? fetch;
-  return new Admin(async (op, args) => {
-    const token = typeof options.token === "function" ? await options.token() : options.token;
-    let response: Response;
+
+  const post = async (url: string, body: unknown, bearer?: string) => {
     try {
-      response = await send(url, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}`, "x-winche-protocol": String(PROTOCOL) },
-        body: JSON.stringify({ op, args }) });
+      return await send(url, {
+        method: "POST", body: JSON.stringify(body),
+        headers: { "content-type": "application/json", "x-winche-protocol": String(PROTOCOL), ...(bearer ? { authorization: `Bearer ${bearer}` } : {}) },
+      });
     } catch (e) {
       throw new WincheError("unavailable", `Couldn't reach ${server}: ${(e as Error)?.message ?? e}`);
     }
+  };
+  const failure = async (response: Response) => {
+    const error = (await response.json().catch(() => null))?.error ?? {};
+    return new WincheError(error.code ?? (response.status === 401 ? "unauthenticated" : response.status === 403 ? "permission-denied" : "internal"),
+      error.message ?? `The server answered ${response.status}.`);
+  };
+
+  // A key or identity token is exchanged for an access token, kept until a minute before it runs out.
+  let current: { token: string; renewAt: number } | null = null;
+  let exchanging: Promise<string> | null = null;
+  const exchange = async () => {
+    const body = options.key ? { key: options.key } : { assertion: await options.identityToken!() };
+    const response = await post(`${base}/service-accounts/token`, body);
+    if (!response.ok) throw await failure(response);
+    const answer = await response.json();
+    current = { token: answer.accessToken, renewAt: Date.parse(answer.expiresAt) - 60_000 };
+    return current.token;
+  };
+  const accessToken = async (fresh: boolean): Promise<string> => {
+    if (options.token) return typeof options.token === "function" ? await options.token() : options.token;
+    if (!fresh && current && Date.now() < current.renewAt) return current.token;
+    exchanging ??= exchange().finally(() => { exchanging = null; });
+    return await exchanging;
+  };
+
+  return new Admin(async (op, args) => {
+    let response = await post(`${base}/admin`, { op, args }, await accessToken(false));
+    // Refused at once (its key or identity changed meanwhile): one fresh exchange, then the refusal stands.
+    if (response.status === 401 && !options.token) response = await post(`${base}/admin`, { op, args }, await accessToken(true));
+    if (!response.ok) throw await failure(response);
     const body = await response.json().catch(() => null);
-    if (!response.ok || body?.error) {
-      const error = body?.error ?? {};
-      throw new WincheError(error.code ?? (response.status === 401 ? "unauthenticated" : response.status === 403 ? "permission-denied" : "internal"),
-        error.message ?? `The server answered ${response.status}.`);
-    }
+    if (body?.error) throw new WincheError(body.error.code ?? "internal", body.error.message ?? "The server refused it.");
     return body?.result ?? null;
   });
 }
@@ -908,7 +947,7 @@ const ambient: Call = (op, args) => {
   if (typeof page === "function") return page(op, args, PROTOCOL);
   return Promise.reject(new WincheError("failed-precondition",
     run ? "This test gave no server: use withServer(...) from @winche/functions/testing to reach one."
-      : "@winche/admin isn't signed in here. Functions and console pages are signed in already (call it while a function runs, not at a module's top level); anywhere else use initializeAdmin({ server, project, token })."));
+      : "@winche/admin isn't signed in here. Functions and console pages are signed in already (call it while a function runs, not at a module's top level); anywhere else use initializeAdmin({ server, project, key })."));
 };
 
 const mismatch = (server: unknown) => new WincheError("failed-precondition",
