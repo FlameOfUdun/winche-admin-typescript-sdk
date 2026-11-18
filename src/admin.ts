@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 /**
- * @winche/admin — a Winche project's data: documents, files, the app's users, assets, and calling functions.
+ * @winche-technologies/winche-admin — a Winche project's data: documents, files, the app's users, assets, and calling functions.
  *
- *   import { documents, files, FieldValue } from "@winche/admin";
+ *   import { documents, files, FieldValue } from "@winche-technologies/winche-admin";
  *
  *   await documents.doc("patients/p1").update({ visits: FieldValue.increment(1) });
  *   const report = await files.child("reports/a.pdf").getData();
@@ -936,7 +936,7 @@ export function initializeAdmin(options: AdminOptions): Admin {
 
 /**
  * @internal Where the SDK runs without initializeAdmin: a function's run (the runtime's bridge), a test
- * (@winche/functions/testing), or a console page (the console's channel).
+ * (@winche-technologies/winche-functions/testing), or a console page (the console's channel).
  */
 const ambient: Call = (op, args) => {
   const g = globalThis as { [k: symbol]: any };
@@ -946,12 +946,12 @@ const ambient: Call = (op, args) => {
   const page = g[Symbol.for("winche.page")];
   if (typeof page === "function") return page(op, args, PROTOCOL);
   return Promise.reject(new WincheError("failed-precondition",
-    run ? "This test gave no server: use withServer(...) from @winche/functions/testing to reach one."
-      : "@winche/admin isn't signed in here. Functions and console pages are signed in already (call it while a function runs, not at a module's top level); anywhere else use initializeAdmin({ server, project, key })."));
+    run ? "This test gave no server: use withServer(...) from @winche-technologies/winche-functions/testing to reach one."
+      : "@winche-technologies/winche-admin isn't signed in here. Functions and console pages are signed in already (call it while a function runs, not at a module's top level); anywhere else use initializeAdmin({ server, project, key })."));
 };
 
 const mismatch = (server: unknown) => new WincheError("failed-precondition",
-  `This @winche/admin speaks protocol ${PROTOCOL}; the server speaks ${server}: use the @winche/admin version made for it.`);
+  `This @winche-technologies/winche-admin speaks protocol ${PROTOCOL}; the server speaks ${server}: use the @winche-technologies/winche-admin version made for it.`);
 
 const signedIn = new Admin(ambient);
 

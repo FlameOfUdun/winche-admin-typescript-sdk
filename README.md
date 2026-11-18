@@ -1,27 +1,27 @@
 # Winche admin TypeScript SDK (`@winche-technologies/winche-admin`)
 
 A Winche project's data — documents, files, the app's users, assets, and calling functions — with one API wherever it
-runs. Published as `@winche-technologies/winche-admin`, imported as `@winche/admin` (an alias):
+runs.
 
 ```sh
-npm install @winche/admin@npm:@winche-technologies/winche-admin       # Node, bundlers
+npm install @winche-technologies/winche-admin       # Node, bundlers
 ```
 
 ```json
 // deno.json (functions)
-{ "imports": { "@winche/admin": "npm:@winche-technologies/winche-admin@^3" } }
+{ "imports": { "@winche-technologies/winche-admin": "npm:@winche-technologies/winche-admin@^3" } }
 ```
 
 Where it runs:
 
 | Where | Acts as | Limited by |
 | --- | --- | --- |
-| Functions (`import … from "@winche/admin"`) | the server | nothing (access rules don't apply) |
-| Console pages (the console resolves `@winche/admin`) | the person who opened the page | their role in the project |
+| Functions (`import … from "@winche-technologies/winche-admin"`) | the server | nothing (access rules don't apply) |
+| Console pages (bundled with the page) | the person who opened the page | their role in the project |
 | Anywhere else (`initializeAdmin`) | a service account (its key, or a trusted identity) | its role in the project |
 
 ```ts
-import { initializeAdmin, FieldValue } from "@winche/admin";
+import { initializeAdmin, FieldValue } from "@winche-technologies/winche-admin";
 
 // A service account's key (exchanged for access tokens, renewed by itself); or identityToken: () => <your host's
 // OpenID Connect token>, for an account that trusts that identity (no key to keep).
@@ -36,8 +36,8 @@ Roles: a viewer reads; a member also writes documents, files and the app's users
 project's access rules for them, as if the app had made them; `functions.call` passes them as the caller.
 
 ```ts
-import { callable } from "@winche/functions";
-import { as } from "@winche/admin";
+import { callable } from "@winche-technologies/winche-functions";
+import { as } from "@winche-technologies/winche-admin";
 
 export const leave = callable(async (data: { ward: string }, ctx) => {
   await as(ctx.caller!).documents.doc(`wards/${data.ward}/members/${ctx.caller!.uid}`).delete();   // the rules decide
@@ -49,10 +49,9 @@ Winche.Functions' README for the whole API.
 
 ## How it's used
 
-- **Functions:** Winche.Functions carries a pinned copy of `src/admin.ts` (its `scripts/update-admin-sdk.sh`) and gives
-  it to every deployment as `@winche/admin`.
-- **Console pages:** Winche Server serves the same copy, bundled for browsers, beside each page.
-- **Other servers:** this npm package.
+- **Functions:** each project names this package in its `deno.json`; the server bundles the version it names.
+- **Console pages:** bundled with the page (or its built file copied beside it).
+- **Other servers:** this npm package, with `initializeAdmin`.
 
 ## Develop
 

@@ -51,4 +51,4 @@ await assert.rejects(identity.documents.doc("notes/a").get(), (e) => e.code === 
 assert.deepEqual(calls.at(-1).body, { assertion: "eyJ.job.token" });
 assert.throws(() => initializeAdmin({ server: "https://winche.example.com", project: "clinic", key: "k", token: "t" }), /one of key/);
 
-console.log("ok: @winche/admin from Node");
+console.log("ok: @winche-technologies/winche-admin from Node");
