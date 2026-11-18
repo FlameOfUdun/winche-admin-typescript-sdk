@@ -5,7 +5,7 @@ import { initializeAdmin, FieldValue, WincheError } from "../dist/index.js";
 
 const sent = [];
 const fakeFetch = async (url, init) => {
-  sent.push({ url, auth: init.headers.authorization, body: JSON.parse(init.body) });
+  sent.push({ url, auth: init.headers.authorization, protocol: init.headers["x-winche-protocol"], body: JSON.parse(init.body) });
   const { op, args } = JSON.parse(init.body);
   if (op === "db.get") return Response.json({ result: { document: { path: args.path, id: "a", collection: "notes", fields: { text: { stringValue: "hi" } }, createTime: "2026-01-01T00:00:00.000000Z", updateTime: "2026-01-01T00:00:00.000000Z", version: 1 } } });
   if (op === "db.write") return Response.json({ result: { writeResults: [{}] } });
@@ -15,7 +15,7 @@ const admin = initializeAdmin({ server: "https://winche.example.com/", project: 
 
 const doc = await admin.documents.doc("notes/a").get();
 assert.equal(doc.get("text"), "hi");
-assert.deepEqual(sent[0], { url: "https://winche.example.com/console/v1/projects/clinic/admin", auth: "Bearer wct_test", body: { op: "db.get", args: { path: "notes/a" } } });
+assert.deepEqual(sent[0], { url: "https://winche.example.com/console/v1/projects/clinic/admin", auth: "Bearer wct_test", protocol: "1", body: { op: "db.get", args: { path: "notes/a" } } });
 
 await admin.documents.doc("notes/a").update({ count: FieldValue.increment(1) });
 assert.equal(sent[1].body.op, "db.write");

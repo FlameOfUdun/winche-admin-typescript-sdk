@@ -202,6 +202,12 @@ function writeFields(data: { [k: string]: unknown }, dotted: boolean) {
 const trimSlashes = (p: string) => p.replace(/^\/+|\/+$/g, "");
 const segments = (p: string) => trimSlashes(p).split("/").filter((s) => s.length > 0);
 
+/**
+ * The protocol this SDK speaks with Winche (its operations and how it finds the server where it runs). A server says
+ * which it speaks; one that doesn't speak this one refuses the SDK's calls, saying which version to use.
+ */
+export const PROTOCOL = 1;
+
 /** @internal A call into the server: the runtime's bridge in functions, the console's channel in pages, HTTP elsewhere. */
 export type Call = (op: string, args: { [k: string]: unknown }) => Promise<any>;
 
@@ -874,7 +880,8 @@ export function initializeAdmin(options: AdminOptions): Admin {
     const token = typeof options.token === "function" ? await options.token() : options.token;
     let response: Response;
     try {
-      response = await send(url, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify({ op, args }) });
+      response = await send(url, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}`, "x-winche-protocol": String(PROTOCOL) },
+        body: JSON.stringify({ op, args }) });
     } catch (e) {
       throw new WincheError("unavailable", `Couldn't reach ${server}: ${(e as Error)?.message ?? e}`);
     }
@@ -895,13 +902,17 @@ export function initializeAdmin(options: AdminOptions): Admin {
 const ambient: Call = (op, args) => {
   const g = globalThis as { [k: symbol]: any };
   const run = g[Symbol.for("winche.run")]?.() ?? g[Symbol.for("winche.test")]?.();
+  if (run?.protocol !== undefined && run.protocol !== PROTOCOL) return Promise.reject(mismatch(run.protocol));
   if (run?.call) return run.call(op, args);
   const page = g[Symbol.for("winche.page")];
-  if (typeof page === "function") return page(op, args);
+  if (typeof page === "function") return page(op, args, PROTOCOL);
   return Promise.reject(new WincheError("failed-precondition",
     run ? "This test gave no server: use withServer(...) from @winche/functions/testing to reach one."
       : "@winche/admin isn't signed in here. Functions and console pages are signed in already (call it while a function runs, not at a module's top level); anywhere else use initializeAdmin({ server, project, token })."));
 };
+
+const mismatch = (server: unknown) => new WincheError("failed-precondition",
+  `This @winche/admin speaks protocol ${PROTOCOL}; the server speaks ${server}: use the @winche/admin version made for it.`);
 
 const signedIn = new Admin(ambient);
 

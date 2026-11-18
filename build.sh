@@ -9,5 +9,7 @@ tmp="$(mktemp -d)"
 npx --yes -p typescript@5.8.3 tsc "$here/src/admin.ts" --declaration --emitDeclarationOnly --target ES2022 --module ESNext --moduleResolution bundler \
   --lib ES2022,DOM --skipLibCheck --outDir "$tmp"
 mv "$tmp/admin.d.ts" "$here/dist/index.d.ts"
+# The module names its own types (Deno reads them when the package is used as files, without npm).
+printf '// @ts-self-types="./index.d.ts"\n' | cat - "$here/dist/index.js" > "$tmp/index.js" && mv "$tmp/index.js" "$here/dist/index.js"
 rm -rf "$tmp"
 echo "built $(wc -c < "$here/dist/index.js") bytes of JS and its types in dist/"
