@@ -51,4 +51,21 @@ await assert.rejects(identity.documents.doc("notes/a").get(), (e) => e.code === 
 assert.deepEqual(calls.at(-1).body, { assertion: "eyJ.job.token" });
 assert.throws(() => initializeAdmin({ server: "https://winche.example.com", project: "clinic", key: "k", token: "t" }), /one of key/);
 
+// Realtime: the ops and payloads it sends (base64), and what it makes of the answers.
+const rtSent = [];
+const rt = initializeAdmin({ server: "https://winche.example.com", project: "clinic", token: () => "t", fetch: async (url, init) => {
+  const { op, args } = JSON.parse(init.body); rtSent.push({ op, args });
+  if (op === "realtime.append") return Response.json({ result: { positions: [1] } });
+  if (op === "realtime.read") return Response.json({ result: { items: [{ key: "a:1", position: 1, at: "2026-01-01T00:00:00Z", by: "ann", payload: btoa('{"n":1}') }], list: { path: args.path, state: "open", count: 1, bytes: 7, openedAt: "2026-01-01T00:00:00Z", closedAt: null } } });
+  return Response.json({ result: {} });
+} });
+assert.deepEqual(await rt.realtime.list("sessions/s1").append([{ key: "a:1", payload: { n: 1 } }]), [1]);
+assert.equal(rtSent[0].op, "realtime.append");
+assert.equal(atob(rtSent[0].args.items[0].payload), '{"n":1}');
+const read = await rt.realtime.list("sessions/s1").read({ after: 0 });
+assert.deepEqual(read.items[0].json(), { n: 1 });
+assert.equal(read.list.count, 1);
+await rt.realtime.channel("sessions/s1", "telemetry").publish(new Uint8Array([1, 2]));
+assert.deepEqual(rtSent.at(-1), { op: "realtime.publish", args: { path: "sessions/s1", channel: "telemetry", payload: "AQI=" } });
+
 console.log("ok: @winche-technologies/winche-admin from Node");

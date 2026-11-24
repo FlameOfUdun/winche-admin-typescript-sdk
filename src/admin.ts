@@ -808,6 +808,71 @@ export class Assets {
 
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// Realtime (lists, channels, presence)
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+const toBase64 = (bytes: Uint8Array): string => { let s = ""; for (const b of bytes) s += String.fromCharCode(b); return btoa(s); };
+const fromBase64 = (text: string): Uint8Array => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
+const jsonBytes = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(value));
+
+/** An item to append: its key (appending it again never duplicates it) and payload (bytes, or any JSON value). */
+export interface RealtimeItemIn { key: string; payload: Uint8Array | Json }
+
+/** An item in a list: its key, position (the same order for everyone), when, by whom, and payload. */
+export interface RealtimeItem { key: string; position: number; at: Date; by: string | null; payload: Uint8Array; json(): unknown }
+
+/** A list: open (takes items) or closed (reads only). */
+export interface RealtimeListInfo { path: string; state: "open" | "closed"; count: number; bytes: number; openedAt: Date; closedAt: Date | null }
+
+const listInfo = (l: any): RealtimeListInfo | null => l ? { ...l, openedAt: new Date(l.openedAt), closedAt: l.closedAt ? new Date(l.closedAt) : null } : null;
+const item = (i: any): RealtimeItem => {
+  const payload = fromBase64(i.payload);
+  return { key: i.key, position: i.position, at: new Date(i.at), by: i.by ?? null, payload, json: () => JSON.parse(new TextDecoder().decode(payload)) };
+};
+
+export class RealtimeList {
+  /** @internal */ constructor(private readonly call: Call, readonly path: string) {}
+  /** Appends items, all or none (with the server's rights): their positions. */
+  async append(items: RealtimeItemIn[]): Promise<number[]> {
+    const wire = items.map((i) => ({ key: i.key, payload: toBase64(i.payload instanceof Uint8Array ? i.payload : jsonBytes(i.payload)) }));
+    return (await this.call("realtime.append", { path: this.path, items: wire })).positions;
+  }
+  /** Up to `limit` items after position `after`, and the list (null when there's none). */
+  async read(options?: { after?: number; limit?: number }): Promise<{ items: RealtimeItem[]; list: RealtimeListInfo | null }> {
+    const r = await this.call("realtime.read", { path: this.path, after: options?.after ?? 0, limit: options?.limit ?? 500 });
+    return { items: (r.items as any[]).map(item), list: listInfo(r.list) };
+  }
+  /** Opens the list. */
+  async open(): Promise<RealtimeListInfo> { return listInfo((await this.call("realtime.open", { path: this.path })).list)!; }
+  /** Closes the list: no more items; it still reads. */
+  async close(): Promise<RealtimeListInfo> { return listInfo((await this.call("realtime.close", { path: this.path })).list)!; }
+}
+
+export class RealtimeChannel {
+  /** @internal */ constructor(private readonly call: Call, readonly path: string, readonly name: string) {}
+  /** Publishes to everyone listening now (bytes, or any JSON value). Never kept. */
+  async publish(payload: Uint8Array | Json): Promise<void> {
+    await this.call("realtime.publish", { path: this.path, channel: this.name, payload: toBase64(payload instanceof Uint8Array ? payload : jsonBytes(payload)) });
+  }
+}
+
+export class RealtimePresence {
+  /** @internal */ constructor(private readonly call: Call, readonly path: string) {}
+  /** Who's connected at the path now. */
+  async members(): Promise<{ uid: string | null; data: { [k: string]: Json } | null; joinedAt: Date }[]> {
+    return ((await this.call("realtime.members", { path: this.path })) as any[]).map((m) => ({ uid: m.uid ?? null, data: m.data ?? null, joinedAt: new Date(m.joinedAt) }));
+  }
+}
+
+/** Winche Realtime: lists, channels and presence, with the server's rights. */
+export class Realtime {
+  /** @internal */ constructor(private readonly call: Call) {}
+  list(path: string): RealtimeList { return new RealtimeList(this.call, path); }
+  channel(path: string, name: string): RealtimeChannel { return new RealtimeChannel(this.call, path, name); }
+  presence(path: string): RealtimePresence { return new RealtimePresence(this.call, path); }
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 // Functions (calling callables)
 // ════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
@@ -835,6 +900,7 @@ export class Admin {
   readonly files: Files;
   readonly auth: Auth;
   readonly assets: Assets;
+  readonly realtime: Realtime;
   readonly functions: Functions;
 
   /** @internal */ constructor(private readonly transport: Call) {
@@ -842,6 +908,7 @@ export class Admin {
     this.files = new Files(transport);
     this.auth = new Auth(transport);
     this.assets = new Assets(transport);
+    this.realtime = new Realtime(transport);
     this.functions = new Functions(transport);
   }
 
@@ -963,6 +1030,8 @@ export const files: Files = signedIn.files;
 export const auth: Auth = signedIn.auth;
 /** The app's assets (releases and channels). */
 export const assets: Assets = signedIn.assets;
+/** Realtime lists, channels and presence. */
+export const realtime: Realtime = signedIn.realtime;
 /** Calling callables. */
 export const functions: Functions = signedIn.functions;
 /** The same API acting as one of the app's users: their access rules apply. */
