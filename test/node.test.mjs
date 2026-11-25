@@ -56,7 +56,7 @@ const rtSent = [];
 const rt = initializeAdmin({ server: "https://winche.example.com", project: "clinic", token: () => "t", fetch: async (url, init) => {
   const { op, args } = JSON.parse(init.body); rtSent.push({ op, args });
   if (op === "realtime.append") return Response.json({ result: { positions: [1] } });
-  if (op === "realtime.read") return Response.json({ result: { items: [{ key: "a:1", position: 1, at: "2026-01-01T00:00:00Z", by: "ann", payload: btoa('{"n":1}') }], list: { path: args.path, state: "open", count: 1, bytes: 7, openedAt: "2026-01-01T00:00:00Z", closedAt: null } } });
+  if (op === "realtime.read") return Response.json({ result: { items: [{ key: "a:1", position: 1, at: "2026-01-01T00:00:00Z", by: "ann", payload: btoa('{"n":1}') }], list: { path: args.path, state: "open", count: 1, bytes: 7, openedAt: "2026-01-01T00:00:00Z", closedAt: null }, more: true } });
   return Response.json({ result: {} });
 } });
 assert.deepEqual(await rt.realtime.list("sessions/s1").append([{ key: "a:1", payload: { n: 1 } }]), [1]);
@@ -65,6 +65,12 @@ assert.equal(atob(rtSent[0].args.items[0].payload), '{"n":1}');
 const read = await rt.realtime.list("sessions/s1").read({ after: 0 });
 assert.deepEqual(read.items[0].json(), { n: 1 });
 assert.equal(read.list.count, 1);
+assert.equal(read.more, true);
+// Bytes in any of their forms go as bytes, not as JSON.
+await rt.realtime.list("sessions/s1").append([{ key: "a:2", payload: new Uint8Array([7, 8]).buffer }, { key: "a:3", payload: new DataView(new Uint8Array([9]).buffer) }]);
+assert.deepEqual(rtSent.at(-1).args.items.map((i) => i.payload), ["Bwg=", "CQ=="]);
+await rt.realtime.channel("sessions/s1", "telemetry").publish(new Uint8Array([5]).buffer);
+assert.equal(rtSent.at(-1).args.payload, "BQ==");
 await rt.realtime.channel("sessions/s1", "telemetry").publish(new Uint8Array([1, 2]));
 assert.deepEqual(rtSent.at(-1), { op: "realtime.publish", args: { path: "sessions/s1", channel: "telemetry", payload: "AQI=" } });
 

@@ -814,9 +814,15 @@ export class Assets {
 const toBase64 = (bytes: Uint8Array): string => { let s = ""; for (const b of bytes) s += String.fromCharCode(b); return btoa(s); };
 const fromBase64 = (text: string): Uint8Array => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
 const jsonBytes = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(value));
+/** A payload's bytes: bytes as they are (Uint8Array, ArrayBuffer, any typed array or DataView), anything else as JSON. */
+const payloadBytes = (value: unknown): Uint8Array =>
+  value instanceof Uint8Array ? value
+    : value instanceof ArrayBuffer ? new Uint8Array(value)
+    : ArrayBuffer.isView(value) ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+    : jsonBytes(value);
 
 /** An item to append: its key (appending it again never duplicates it) and payload (bytes, or any JSON value). */
-export interface RealtimeItemIn { key: string; payload: Uint8Array | Json }
+export interface RealtimeItemIn { key: string; payload: Uint8Array | ArrayBuffer | ArrayBufferView | Json }
 
 /** An item in a list: its key, position (the same order for everyone), when, by whom, and payload. */
 export interface RealtimeItem { key: string; position: number; at: Date; by: string | null; payload: Uint8Array; json(): unknown }
@@ -834,13 +840,13 @@ export class RealtimeList {
   /** @internal */ constructor(private readonly call: Call, readonly path: string) {}
   /** Appends items, all or none (with the server's rights): their positions. */
   async append(items: RealtimeItemIn[]): Promise<number[]> {
-    const wire = items.map((i) => ({ key: i.key, payload: toBase64(i.payload instanceof Uint8Array ? i.payload : jsonBytes(i.payload)) }));
+    const wire = items.map((i) => ({ key: i.key, payload: toBase64(payloadBytes(i.payload)) }));
     return (await this.call("realtime.append", { path: this.path, items: wire })).positions;
   }
-  /** Up to `limit` items after position `after`, and the list (null when there's none). */
-  async read(options?: { after?: number; limit?: number }): Promise<{ items: RealtimeItem[]; list: RealtimeListInfo | null }> {
+  /** Up to `limit` items after position `after`, the list (null when there's none), and whether more follow (`more`: read on after the last). */
+  async read(options?: { after?: number; limit?: number }): Promise<{ items: RealtimeItem[]; list: RealtimeListInfo | null; more: boolean }> {
     const r = await this.call("realtime.read", { path: this.path, after: options?.after ?? 0, limit: options?.limit ?? 500 });
-    return { items: (r.items as any[]).map(item), list: listInfo(r.list) };
+    return { items: (r.items as any[]).map(item), list: listInfo(r.list), more: r.more === true };
   }
   /** Opens the list. */
   async open(): Promise<RealtimeListInfo> { return listInfo((await this.call("realtime.open", { path: this.path })).list)!; }
@@ -851,8 +857,8 @@ export class RealtimeList {
 export class RealtimeChannel {
   /** @internal */ constructor(private readonly call: Call, readonly path: string, readonly name: string) {}
   /** Publishes to everyone listening now (bytes, or any JSON value). Never kept. */
-  async publish(payload: Uint8Array | Json): Promise<void> {
-    await this.call("realtime.publish", { path: this.path, channel: this.name, payload: toBase64(payload instanceof Uint8Array ? payload : jsonBytes(payload)) });
+  async publish(payload: Uint8Array | ArrayBuffer | ArrayBufferView | Json): Promise<void> {
+    await this.call("realtime.publish", { path: this.path, channel: this.name, payload: toBase64(payloadBytes(payload)) });
   }
 }
 
