@@ -814,10 +814,11 @@ export class Assets {
 const toBase64 = (bytes: Uint8Array): string => { let s = ""; for (const b of bytes) s += String.fromCharCode(b); return btoa(s); };
 const fromBase64 = (text: string): Uint8Array => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
 const jsonBytes = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(value));
-/** A payload's bytes: bytes as they are (Uint8Array, ArrayBuffer, any typed array or DataView), anything else as JSON. */
+/** A payload's bytes: bytes as they are (Uint8Array, ArrayBuffer, SharedArrayBuffer, any typed array or DataView), anything else as JSON. */
 const payloadBytes = (value: unknown): Uint8Array =>
   value instanceof Uint8Array ? value
     : value instanceof ArrayBuffer ? new Uint8Array(value)
+    : typeof SharedArrayBuffer !== "undefined" && value instanceof SharedArrayBuffer ? new Uint8Array(value).slice()
     : ArrayBuffer.isView(value) ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
     : jsonBytes(value);
 

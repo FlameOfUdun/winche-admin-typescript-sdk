@@ -71,6 +71,10 @@ await rt.realtime.list("sessions/s1").append([{ key: "a:2", payload: new Uint8Ar
 assert.deepEqual(rtSent.at(-1).args.items.map((i) => i.payload), ["Bwg=", "CQ=="]);
 await rt.realtime.channel("sessions/s1", "telemetry").publish(new Uint8Array([5]).buffer);
 assert.equal(rtSent.at(-1).args.payload, "BQ==");
+// A SharedArrayBuffer is bytes too.
+const shared = new SharedArrayBuffer(2); new Uint8Array(shared).set([7, 8]);
+await rt.realtime.channel("sessions/s1", "telemetry").publish(shared);
+assert.equal(rtSent.at(-1).args.payload, "Bwg=");
 await rt.realtime.channel("sessions/s1", "telemetry").publish(new Uint8Array([1, 2]));
 assert.deepEqual(rtSent.at(-1), { op: "realtime.publish", args: { path: "sessions/s1", channel: "telemetry", payload: "AQI=" } });
 

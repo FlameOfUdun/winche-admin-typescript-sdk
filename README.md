@@ -1,7 +1,7 @@
 # Winche admin TypeScript SDK (`@winche-technologies/winche-admin`)
 
-A Winche project's data — documents, files, the app's users, assets, and calling functions — with one API wherever it
-runs.
+A Winche project's data — documents, files, the app's users, assets, Realtime, and calling functions — with one API
+wherever it runs.
 
 ```sh
 npm install @winche-technologies/winche-admin       # Node, bundlers
@@ -43,6 +43,20 @@ export const leave = callable(async (data: { ward: string }, ctx) => {
   await as(ctx.caller!).documents.doc(`wards/${data.ward}/members/${ctx.caller!.uid}`).delete();   // the rules decide
 });
 ```
+
+Realtime (Winche Realtime: lists, channels and presence), with the server's rights:
+
+```ts
+import { realtime } from "@winche-technologies/winche-admin";
+
+await realtime.list("sessions/s1").append([{ key: "server:1", payload: { event: "started" } }]);   // JSON, or bytes
+const page = await realtime.list("sessions/s1").read({ after: 0 });   // page.more: read on after the last
+await realtime.channel("sessions/s1", "alerts").publish({ level: "high" });
+const here = await realtime.presence("sessions/s1").members();
+await realtime.list("sessions/s1").close();
+```
+
+Writing needs the admin role; `as(user)` doesn't apply to Realtime.
 
 References (`doc`, `collection`, `child`, `user`) and the snapshots their reads return read like the Dart SDKs. See
 Winche.Functions' README for the whole API.
